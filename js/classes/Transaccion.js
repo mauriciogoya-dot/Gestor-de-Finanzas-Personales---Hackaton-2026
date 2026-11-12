@@ -1,23 +1,34 @@
 export class Transaccion {
-  // Inicializamos el array cargando lo que haya en localStorage (si no hay nada, devuelve un array vacío [])
   static transacciones = Transaccion.cargarDelLocalStorage();
 
-  constructor(tipo, descripcion, monto, categoria) {
-    this.id = Date.now().toString();
+  constructor(tipo, descripcion, monto, categoria, fecha = null, id = null) {
+    this.id = id ? id : Date.now().toString();
     this.tipo = tipo;
     this.descripcion = descripcion;
     this.monto = parseFloat(monto);
     this.categoria = categoria;
+    // Si no se asigna fecha, toma por defecto la fecha actual en formato YYYY-MM-DD
+    this.fecha = fecha || new Date().toISOString().split("T")[0];
   }
 
-  // AGREGAMOS - Método auxiliar privado/estático para leer del localStorage
   static cargarDelLocalStorage() {
     const datosGuardados = localStorage.getItem("transacciones_hackaton");
-    // Si existen datos, los devolvemos. Si no, devolvemos un array vacío.
-    return datosGuardados ? JSON.parse(datosGuardados) : [];
+    if (!datosGuardados) return [];
+
+    const objetosPlanos = JSON.parse(datosGuardados);
+    return objetosPlanos.map(
+      (obj) =>
+        new Transaccion(
+          obj.tipo,
+          obj.descripcion,
+          obj.monto,
+          obj.categoria,
+          obj.fecha,
+          obj.id,
+        ),
+    );
   }
 
-  // AGREGAMOS - Método auxiliar estático para guardar el array actual en el localStorage
   static SincronizarLocalStorage() {
     localStorage.setItem(
       "transacciones_hackaton",
@@ -25,18 +36,28 @@ export class Transaccion {
     );
   }
 
-  // Modificamos guardar() para que además guarde en el navegador
   guardar() {
     Transaccion.transacciones.push(this);
-    Transaccion.SincronizarLocalStorage(); // <-- Guardado automático
+    Transaccion.SincronizarLocalStorage();
   }
 
-  // Modificamos eliminar para que también actualice el localStorage
+  static actualizar(id, nuevosDatos) {
+    const index = Transaccion.transacciones.findIndex((t) => t.id === id);
+    if (index !== -1) {
+      Transaccion.transacciones[index].tipo = nuevosDatos.tipo;
+      Transaccion.transacciones[index].descripcion = nuevosDatos.descripcion;
+      Transaccion.transacciones[index].monto = parseFloat(nuevosDatos.monto);
+      Transaccion.transacciones[index].categoria = nuevosDatos.categoria;
+      Transaccion.transacciones[index].fecha = nuevosDatos.fecha;
+      Transaccion.SincronizarLocalStorage();
+    }
+  }
+
   static eliminar(id) {
     Transaccion.transacciones = Transaccion.transacciones.filter(
       (t) => t.id !== id,
     );
-    Transaccion.SincronizarLocalStorage(); // <-- Sincronización automática al borrar
+    Transaccion.SincronizarLocalStorage();
   }
 
   static calcularBalance() {
@@ -51,25 +72,65 @@ export class Transaccion {
       }
     });
 
-    const balanceNeto = totalIngresos - totalGastos;
-
     return {
       totalIngresos,
       totalGastos,
-      balanceNeto,
+      balanceNeto: totalIngresos - totalGastos,
     };
   }
 
   static obtenerResumenPorCategorias() {
     const resumen = {};
-
     Transaccion.transacciones.forEach((t) => {
       if (!resumen[t.categoria]) {
         resumen[t.categoria] = 0;
       }
       resumen[t.categoria] += t.monto;
     });
-
     return resumen;
+  }
+
+  // Método estático para agrupar movimientos por fecha para el gráfico de líneas
+  static obtenerEvolucionTemporal() {
+    if (Transaccion.transacciones.length === 0) {
+      return { fechas: [], ingresos: [], gastos: [], balances: [] };
+    }
+
+    // Ordenar todas las transacciones en orden cronológico (de más antigua a más reciente)
+    const ordenadas = [...Transaccion.transacciones].sort(
+      (a, b) => new Date(a.fecha) - new Date(b.fecha),
+    );
+
+    // Agrupar por fecha
+    const porFecha = {};
+    ordenadas.forEach((t) => {
+      if (!porFecha[t.fecha]) {
+        porFecha[t.fecha] = { ingreso: 0, gasto: 0 };
+      }
+      if (t.tipo === "ingreso") {
+        porFecha[t.fecha].ingreso += t.monto;
+      } else {
+        porFecha[t.fecha].gasto += t.monto;
+      }
+    });
+
+    const fechas = Object.keys(porFecha);
+    const ingresos = [];
+    const gastos = [];
+    const balances = [];
+
+    let balanceAcumulado = 0;
+
+    fechas.forEach((f) => {
+      const ing = porFecha[f].ingreso;
+      const gas = porFecha[f].gasto;
+      balanceAcumulado += ing - gas;
+
+      ingresos.push(ing);
+      gastos.push(gas);
+      balances.push(balanceAcumulado);
+    });
+
+    return { fechas, ingresos, gastos, balances };
   }
 }
